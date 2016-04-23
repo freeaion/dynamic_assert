@@ -1,0 +1,145 @@
+# -------------------------------------------------------------------------
+# Makefile.rule: common build rules
+#
+# Copyright 2016 by Yonghyun Hwang <freeaion@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.  Some rights reserved.
+# -------------------------------------------------------------------------
+# 06/03/2015 <Yonghyun Hwang> Initial version
+#
+
+ifeq (,$(PRJ_ROOT_DIR))
+  $(error "PRJ_ROOT_DIR should be defined before including Makefile.rules file")
+endif
+include $(PRJ_ROOT_DIR)/Makefile.macros
+
+# -----------------------
+# define utility functions
+define iterate_dirs
+	set -e ; for d in $(2); do \
+	  $(MAKE) -C $$d $(1); \
+	done
+endef
+
+PLATFORM = linux64
+CONFIG   = debug
+
+define print_help
+	$(ECHO) "Build targets for" $(1)
+	$(ECHO) ""
+	$(ECHO) "  all         build" $(1)
+	$(ECHO) "  clean       clean all .o files"
+	$(ECHO) "  distclean   clean all files generated during build"
+	$(ECHO) "  help        display this message (default)"
+	$(ECHO) ""
+	$(ECHO) "Build options"
+	$(ECHO) ""
+	$(ECHO) "  PLATFORM = [linux64|linux]  default is linux64"
+	$(ECHO) "  CONFIG   = [debug|optimize] default is debug"
+	$(ECHO) "  GPROF    = [no|yes]         default is no"
+	$(ECHO) ""
+	$(ECHO) "Examples"
+	$(ECHO) ""
+	$(ECHO) "  make all                           # debug linux64 build"
+	$(ECHO) "  make CONFIG=optimize all           # optimize linux64 build"
+	$(ECHO) "  make PLATFORM=linux all            # debug linux build"
+	$(ECHO) "  make GPROF=yes CONFIG=optimize all # optimize linux64 build w/ GPROF profiling on"
+	$(ECHO) ""
+endef
+
+PRT_PREFIX := "`hostname`[`date +'%m/%d %H:%M'`]::BUILD"
+define print_info_msg
+	@$(ECHO) "$(PRT_PREFIX)[INFO]::" $(1)
+endef
+
+define print_warn_msg
+	@$(ECHO) "$(PRT_PREFIX)[WARN]::" $(1)
+endef
+
+define platform_not_support
+help all install clean distclean test:
+	$$(call print_info_msg, "platforms other than linux* are not supported for now")
+endef
+
+# actual body of generic build rules for all lib build
+define play_magic
+
+ifneq (,$$(filter linux%,$$(BUILD_PLATFORM)))
+
+ifeq ($$(LIB_NAME),)
+all: $$(EXE)
+	$$(call print_info_msg, "$$(EXE) is created")
+else
+all: $$(LIB_NAME)
+	$$(call print_info_msg, "lib$$(LIB_NAME).so is created")
+endif
+
+
+$$(BUILD_DIR): ; @$$(MKDIR) $$@
+
+$$(EXE): $$(OBJS)
+	@$$(call iterate_dirs, all, $$(SUB_DIRS))
+	@$$(CXX) -o $$@ $$^ $$(LOCAL_LIB)
+
+$$(LIB_NAME): CFLAGS+=-fPIC
+$$(LIB_NAME): CXXFLAGS+=-fPIC
+$$(LIB_NAME): $$(OBJS)
+	@$$(call iterate_dirs, all, $$(SUB_DIRS))
+	@$$(CXX) -shared -o lib$$@.so $$^ $$(LOCAL_LIB)
+
+$$(OBJS): | $$(BUILD_DIR)
+
+clean:
+	@$$(call iterate_dirs, $$@, $$(SUB_DIRS))
+	@$$(RM) -r $$(BUILD_DIR)/*.o
+ifneq ($$(LIB_NAME),)
+	@$$(RM) -f lib$$(LIB_NAME).so
+endif
+	$$(call print_info_msg, "$(1) is $$@ed")
+
+distclean:
+	@$$(call iterate_dirs, $$@, $$(SUB_DIRS))
+	@$$(RM) -r $$(BUILD_DIR_ROOT) $$(EXE)
+ifneq ($$(LIB_NAME),)
+	@$$(RM) -f lib$$(LIB_NAME).so
+endif
+	$$(call print_info_msg, "$(1) is $$@ed")
+
+help:
+	@$$(call print_help, "$(1)")
+
+else # platforms other than linux* are not supported
+  $$(eval $$(call platform_not_support))
+endif
+
+endef
+
+# default targets
+.PHONY: help all install clean distclean
+
+.DEFAULT_GOAL := help
+
+# compiling obj files & its dep
+$(BUILD_DIR)/%.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PRJ_LOCAL_INC) $(LOCAL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: %.cc
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(PRJ_LOCAL_INC) $(LOCAL_CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: %.cpp
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(PRJ_LOCAL_INC) $(LOCAL_CXXFLAGS) -c $< -o $@
+
+%.o: %.c
+	$(call print_warn_msg, "should not fall here. critical error in build system")
+
+%.o: %.cc
+	$(call print_warn_msg, "should not fall here. critical error in build system")
+
+%.o: %.cpp
+	$(call print_warn_msg, "should not fall here. critical error in build system")
+
+# include auto gen-ed dep files
+-include $(DEPS)
